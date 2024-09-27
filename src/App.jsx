@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 const App = () => {
@@ -6,6 +6,7 @@ const App = () => {
   const [weatherData, setWeatherData] = useState(null);
   const [error, setError] = useState('');
   const [dateTime, setDateTime] = useState('');
+  const intervalRef = useRef(null);  // Use a ref to store the interval ID
 
   const api = {
     key: "fcc8de7015bbb202209bbf0261babf4c",
@@ -18,6 +19,7 @@ const App = () => {
       const response = await axios.get(`${api.base}weather?q=${query}&units=metric&APPID=${api.key}`);
       setWeatherData(response.data);
       setError('');
+      updateDateTime(response.data.timezone);  // Pass the timezone offset to updateDateTime
     } catch (err) {
       setError('City not found');
       setWeatherData(null);
@@ -30,6 +32,7 @@ const App = () => {
       const response = await axios.get(`${api.base}weather?lat=${lat}&lon=${lon}&units=metric&APPID=${api.key}`);
       setWeatherData(response.data);
       setError('');
+      updateDateTime(response.data.timezone);  // Pass the timezone offset to updateDateTime
     } catch (err) {
       setError('Unable to get weather data');
       setWeatherData(null);
@@ -43,30 +46,32 @@ const App = () => {
     }
   };
 
-  // Function to build date
-  const dateBuilder = (d) => {
-    let months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    let days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  // Function to build the local date and time based on the city timezone
+  const updateDateTime = (timezoneOffset) => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
 
-    let day = days[d.getDay()];
-    let date = d.getDate();
-    let month = months[d.getMonth()];
-    let year = d.getFullYear();
-
-    return `${day} ${date} ${month} ${year}`;
-  };
-
-  // Use effect to get the current date and time
-  useEffect(() => {
-    const interval = setInterval(() => {
+    intervalRef.current = setInterval(() => {
       const now = new Date();
-      const formattedDate = dateBuilder(now);
-      const formattedTime = now.toLocaleTimeString();
-      setDateTime(`${formattedDate} ${formattedTime}`);
-    }, 1000);
+      const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;  // Convert current time to UTC
+      const localTime = new Date(utcTime + timezoneOffset * 1000);      // Adjust to city timezone
 
-    return () => clearInterval(interval);
-  }, []);
+      const options = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      };
+
+      const formattedDate = new Intl.DateTimeFormat('en-US', options).format(localTime);
+      setDateTime(formattedDate);
+    }, 1000);
+  };
 
   // Use effect to get user's location and fetch weather data
   useEffect(() => {
@@ -83,6 +88,13 @@ const App = () => {
     } else {
       setError('Geolocation is not supported by this browser.');
     }
+
+    // Clean up the interval when the component unmounts
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
   }, []);
 
   return (
@@ -102,7 +114,7 @@ const App = () => {
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                onKeyParse={setQuery}
+                onKeyDown={setQuery}
                 placeholder="Enter city"
                 className="bg-transparent outline-none text-white w-full px-2"
               />
